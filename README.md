@@ -1,135 +1,82 @@
 # Tempo
 
-中文任务管理与学习日历。The **same Tempo application** now builds as a React + Vite + TypeScript static frontend for GitHub Pages. Supabase provides email/password accounts and PostgreSQL storage. There is no SSR, server action, Worker, D1 binding, or `/api` process in the production application.
+中文个人任务管理与学习日历，使用 React + Vite + TypeScript，通过 GitHub Pages 自动发布。
 
-**Current status:** frontend build, lint, model tests and embedded PostgreSQL migration/RLS tests pass. No Supabase project or GitHub `tempo` repository has been configured. Live authentication, cloud saves, and GitHub Actions deployment have **not** been tested or published. Configuration is required before production use.
+- Repository: https://github.com/Landyzml/tempo
+- Website: https://landyzml.github.io/tempo/
 
-## Local setup
+## Personal, browser-only storage
 
-Use Node **24 LTS** and pnpm **11.25.0**:
+Tasks, events and linked study sessions are stored in **IndexedDB in the current browser**. No login, Supabase project, API key, or server is required. Records are never committed to the repository or uploaded by the application. The public repository contains application code only.
+
+Data survives reloads and normal browser restarts. Other browsers/devices have separate data. Clearing site data, deleting a browser profile, private browsing, or browser storage eviction can remove records. Data is not encrypted by Tempo; anyone with access to this browser profile can access it. Browser storage is scoped to the website origin, not a separate account.
+
+Use **备份** in the header (or the workspace button at the bottom of navigation):
+
+- **导出备份** downloads a versioned JSON file containing all tasks and events. Keep it somewhere safe.
+- **导入备份** validates the complete file, then atomically adds new records. Existing IDs retain their local versions; imports never overwrite or delete existing records. A summary reports added/skipped counts. To move to a different browser/device, export and import there.
+- **请求浏览器持久保存** asks the browser to reduce automatic eviction risk. Approval is browser-controlled and does not prevent deliberate clearing. Backups are still necessary.
+
+Files are limited to 10 MB / 10,000 records and validated for dates, times, IDs, kinds and linked-task consistency. Invalid imports abort without changing existing data. Import is additive; it is not a destructive “replace everything” restore.
+
+Storage writes are transactional. Session changes do not change task deadlines; deleting a task removes linked sessions in the same transaction. Creation/modification/completion timestamps are maintained. Other tabs on the same origin refresh through BroadcastChannel.
+
+## Features
+
+- Overview: workload counts, today's progress, four priority quadrants, upcoming deadlines and sessions.
+- Today: due/scheduled tasks, incomplete overdue work, and today's events.
+- Tasks: creation/edit/delete, complete/reopen, descriptions, deadline date/time, importance and manual urgency, search/filter/sort.
+- Calendar: month/week/day, all 24 hours, date navigation, date picker, all-day events, derived deadline markers, multiple linked sessions, overlapping blocks, drag rescheduling and manual duration edits.
+- Mobile navigation and a full-width day view. Weekly calendar scrolls horizontally on small screens.
+- No focus timer, Pomodoro or focus statistics.
+
+Timed events use a local calendar date and wall-clock start/end. They preserve that clock time across timezone changes, rather than representing a global UTC instant. Automatic urgency uses today/tomorrow dates. Recurring events, cross-midnight events, external calendar sync, drag-resize and cross-device automatic sync are not implemented.
+
+## Development
+
+Requires Node 24 LTS and pnpm 11.25.0:
 
 ```sh
 npm install --global pnpm@11.25.0
 pnpm install --frozen-lockfile
-cp .env.example .env.local
-# Fill in your Supabase project URL and public publishable key.
 pnpm dev
 ```
 
-Open `http://127.0.0.1:5173/tempo/`. Production-style preview:
+Open `http://127.0.0.1:5173/tempo/`.
 
 ```sh
 pnpm lint
 pnpm test
-pnpm check:config
 pnpm build
 pnpm check:dist
 pnpm preview
 ```
 
-Without configuration, the application shows a setup screen. Its optional **查看界面示例** opens clearly labeled, ephemeral sample interactions, with no authentication or cloud writes. Refreshing clears the example. A failed cloud request never silently switches to sample records. Task/event records are not saved in localStorage. Supabase's SDK persists only its authentication session in browser storage.
+No environment variables are required. Do not put personal records or backup files into the repository. Local preview and the production site are different origins and therefore have different databases: use export/import to move your records.
 
-## Supabase configuration
+## GitHub Pages deployment
 
-1. Create a Supabase project at [Supabase](https://supabase.com/dashboard). Keep its database password private.
-2. In SQL Editor, run **`supabase/migrations/202611060001_tempo.sql` once**. It creates new `public.tasks` and `public.calendar_entries` tables in a transaction. If using the Supabase CLI with a linked project, apply it with your normal migration workflow instead; do not apply it twice.
-3. Under Authentication → Providers, enable Email/password. Keep email confirmation enabled. Configure SMTP for production delivery and review password/rate-limit settings.
-4. Under Authentication → URL Configuration, set Site URL to `https://YOUR_GITHUB_USERNAME.github.io/tempo/`. Add that exact URL and `http://127.0.0.1:5173/tempo/` to allowed Redirect URLs. Add `http://localhost:5173/tempo/` only if using that local hostname.
-5. Copy the project URL and **publishable** key from the project's Connect/API Keys panel. Legacy `anon` JWT keys are also accepted. Never use `sb_secret_…`, a `service_role` JWT, database password, or a management token in this frontend.
-6. Set `.env.local` locally:
+The repository is configured for GitHub Actions as the Pages source. Pushing to `main` runs `.github/workflows/deploy.yml`: locked dependency installation, lint, storage/backup tests, TypeScript/build, static asset checks, artifact upload and Pages deployment. It uses SHA-pinned official GitHub actions and GitHub's automatic token/OIDC; no deployment token or backend secrets are needed.
 
-```dotenv
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_PUBLIC_KEY
-```
+`vite.config.ts` sets `base: '/tempo/'`. The workflow publishes `dist/`. No server process runs on GitHub Pages.
 
-Restart Vite after changing variables. Vite substitutes public variables at **build time**, so updating GitHub configuration requires a new build/deployment. Public keys are expected to be visible in the JavaScript bundle; data security comes from authenticated identity plus database RLS.
+Routes are hash-based, so direct entries, refreshes and browser back/forward work on static hosting:
 
-Signup, login, logout, password reset email, and password changes use the Supabase SDK. Auth redirects return to the application base URL, not a nonexistent `/callback` server. The SDK handles the PKCE code in the query string; app navigation uses the hash. Open confirmation/recovery links in the **same browser** that requested them because PKCE uses a locally stored verifier. Email confirmation and recovery flows must be validated against the actual configured project before launch.
+- `/tempo/#/dashboard`
+- `/tempo/#/today`
+- `/tempo/#/tasks`
+- `/tempo/#/calendar`
 
-## Database design and isolation
+If assets return 404, verify the repository name/base path and that Pages publishes the built `dist` artifact. If Pages is disabled, choose Settings → Pages → Source → GitHub Actions, then run the workflow. A renamed repository or custom-domain root requires updating both Vite base and the prefix in `scripts/check-dist.mjs`.
 
-- `tasks`: owner UUID, title, description, due date/time, importance, manual urgency, completion and server-managed timestamps.
-- `calendar_entries`: owner UUID, independent event or linked session, date, start/end time, all-day status, category and related task UUID.
-- Task deadline markers are derived from task due dates. Changing a session never changes the task deadline. Tasks can have multiple sessions.
-- A composite foreign key `(related_task_id, user_id)` references `(tasks.id, tasks.user_id)`. This rejects cross-user links and orphan sessions. Deleting a task cascades to its sessions.
-- RLS is enabled on **both** tables. Every SELECT/INSERT/UPDATE/DELETE is restricted to `auth.uid() = user_id`. Anonymous access is revoked. Database constraints validate title, kind, ownership relationship and time ranges. A trigger keeps IDs/owners/creation timestamps immutable and manages modification/completion timestamps.
-- Indexes support owner/date and related-task lookups.
-- Date-only values remain PostgreSQL dates. Sessions use local calendar date and wall-clock times; they do not shift on UTC conversion. They are not travel-aware absolute instants. Cross-day and recurring events are outside this implementation.
+## Tests
 
-The original workspace had no StudyFlow repository or database credentials. The preceding Workers implementation was unpublished; its source and original D1 migration are preserved in the local sibling `work/tempo-legacy` backup, and the previous deliverable zip remains available. No accounts or production data were deleted. This migration does **not** import old StudyFlow identities/tasks. An import requires the old backend source/export and a separately reviewed user-ID mapping.
+`pnpm test` uses fake-indexeddb to exercise the browser storage adapter without mocking persistence as an application feature. It checks reopening the database, independent deadlines and sessions, completion timestamps, cascading deletion, validated backups, restoration, duplicate handling, preservation of local edits, and rejection of invalid imports/dangling links. Route tests verify all four hash URLs.
 
-## GitHub repository and Pages
+The actual deployed browser is checked separately for task/event creation, editing/completion, reload persistence, backup export and responsive calendar rendering. Refer to the deployment result in the accompanying chat for which live checks have completed.
 
-No GitHub username is hard-coded and no remote repository was assumed or created. Expected repository name: **`tempo`**.
+## Previous backend implementation
 
-1. Create an empty `tempo` repository on your GitHub account. Do not overwrite an unrelated repository. Choose visibility according to your GitHub Pages plan; remember Pages is a published website and frontend source/bundle is public information.
-2. In repository Settings → Secrets and variables → Actions → **Variables**, add:
-   - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`
-     These are public values, not service credentials. The workflow rejects missing/placeholders/secret-key configuration before deploying.
-3. Under Settings → Pages → Build and deployment → Source, select **GitHub Actions**.
-4. After reviewing the project and authorizing publication, connect and push it:
+The preceding Supabase integration was replaced at the user's request with personal browser-only storage. No existing Supabase project was paused or modified. The original Supabase migration remains in `supabase/migrations/` as a historical reference only; it is not used by this build and must not be applied for this version. Earlier cloud code remains recoverable in Git history.
 
-```sh
-git add .
-git commit -m "Build Tempo for GitHub Pages with Supabase"
-git branch -M main
-git remote add origin https://github.com/YOUR_GITHUB_USERNAME/tempo.git
-git push -u origin main
-```
-
-Check `git remote -v` first; use `remote set-url` only when you intentionally mean to change an existing remote. A push to `main` triggers production deployment. To run manually, use Actions → Deploy Tempo to GitHub Pages → Run workflow.
-
-5. Approve a `github-pages` environment deployment if your repository protection rules require it. After the workflow succeeds, open its returned deployment URL: `https://YOUR_GITHUB_USERNAME.github.io/tempo/`.
-
-`.github/workflows/deploy.yml` uses SHA-pinned official checkout/setup-node/configure-pages/upload-pages-artifact/deploy-pages actions and a locked dependency install. Build gets `contents: read` and `pages: read`; only deploy gets `pages: write` and `id-token: write`. It uses GitHub's automatic token/OIDC, with no PAT or third-party deployment token.
-
-`vite.config.ts` uses **`base: '/tempo/'`**. Assets compile to `/tempo/assets/...`. Change `base` and the `check-dist` prefix together if deliberately using a different repository name or custom-domain root.
-
-### Routes and refreshes
-
-- Overview: `/tempo/#/dashboard`
-- Today: `/tempo/#/today`
-- Tasks: `/tempo/#/tasks`
-- Calendar: `/tempo/#/calendar`
-
-These are hash routes. Browsers request `/tempo/` from GitHub Pages on direct entry and refresh; no server-side rewrite or copied 404 page is required. Back/forward and bookmarks update the selected section. Do not use bare `/tempo/tasks` paths.
-
-## What to test on the configured production site
-
-These **remain pending** until real infrastructure exists:
-
-1. Sign up two test accounts, confirm emails, log in/out, reset/change a password.
-2. As account A, create/edit/complete/reopen a dated task, a standalone event and multiple sessions. Refresh and sign back in; verify persisted values.
-3. Move a session and confirm its task deadline stays unchanged. Delete the task and verify linked sessions are removed.
-4. As account B, verify A's records cannot be read/changed and a forged link to A's task is rejected by the database.
-5. Direct-open and refresh all four hash URLs. Check network requests use `/tempo/assets/`, and no `/api/records`, SSR endpoint or localhost backend is contacted.
-6. Check month/week/day, date navigation, filters, mobile navigation and calendar editing on the actual Pages domain.
-
-## Automated verification
-
-`pnpm test` runs six tests, including a real embedded PostgreSQL (PGlite) integration test of the migration, RLS CRUD isolation, cross-owner/orphan rejection, immutable ownership, completion timestamps, date validation and cascading deletion. Test fixtures stub Supabase's `auth.users`/`auth.uid()` and roles **only in the in-memory test database**; they do not mock production authentication or prove hosted Supabase configuration.
-
-Browser checks on the local production build: all four hash routes retained their selected section after refresh and re-entering the explicit UI example; calendar rendered 336 weekly half-hour slots. The 390px phone day view had 48 half-hour slots and no document overflow. Live cloud paths remain untested.
-
-Other checks: TypeScript via build; ESLint; emitted static asset paths and absence of server artifacts. `pnpm check:config` checks configuration syntax and prevents secret keys/placeholders; it does not check network connectivity. A local static build is allowed without credentials for setup/visual review; the production workflow always requires valid-looking configuration.
-
-## Troubleshooting
-
-- **Workflow says configuration missing:** use repository Actions Variables with the exact names, then rerun. `.env.local` is intentionally ignored and is not uploaded to GitHub.
-- **Pages 404:** enable GitHub Actions as the Pages source, confirm repo name `tempo` and base `/tempo/`, wait for a successful deploy, and use hash URLs. Publishing the source folder instead of `dist` will not work.
-- **Assets 404:** check base path and case-sensitive filenames. Run `pnpm check:dist` after building.
-- **Login/confirmation fails:** check allowed redirect URLs, email delivery/SMTP, project availability and public key. Use the same browser for PKCE recovery. Do not disable RLS to fix login.
-- **Cloud records fail to load:** run the migration, check table names/schema/permissions in Supabase, verify the account is signed in, and use the visible Retry action. The app preserves edits in an open editor if a save fails.
-- **RLS error:** confirm both `USING` and `WITH CHECK` policies exist and `user_id` matches the JWT user. Sessions must link to a task owned by that same user.
-- **Changed environment values have no effect:** rebuild/redeploy; frontend variables are baked into static assets.
-- **Local install mismatch:** use Node 24 and pnpm 11.25.0 with the checked-in lockfile. Do not commit `.env.local`, auth sessions, or credentials.
-
-## Features and limits
-
-The original Chinese dashboard, Today, task list and calendar remain. Includes task CRUD/completion, importance/urgency quadrants, search/filter/sort, independent events, multiple linked sessions, month/week/day, date navigation, all-day entries, drag rescheduling and manual duration edits. No Pomodoro or focus statistics. No external-calendar sync, recurrence, drag-resize, cross-midnight events, or realtime push between devices; refresh loads current cloud records.
-
-## References
-
-Configuration follows [Vite's GitHub Pages guide](https://vite.dev/guide/static-deploy), [GitHub's custom Pages workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages), [Supabase password auth](https://supabase.com/docs/guides/auth/passwords), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security) and [public API key guidance](https://supabase.com/docs/guides/getting-started/api-keys).
+No remote personal data or existing accounts were imported. There was no configured Tempo cloud backend to migrate. Browser-only storage deliberately has no authentication or cloud-sync claims.

@@ -13,17 +13,14 @@
     "preview": "vite preview --host 127.0.0.1 --port 5173",
     "lint": "eslint src tests vite.config.ts",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "check:config": "node scripts/check-config.mjs",
     "check:dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.0.0",
     "lucide-react": "^1.31.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.3.0",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -33,6 +30,7 @@
     "prettier": "^3.9.10",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.0.0",
-    "vite": "8.0.13"
+    "vite": "8.0.13",
+    "fake-indexeddb": "6.2.4"
   }
 }

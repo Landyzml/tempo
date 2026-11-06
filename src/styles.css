@@ -1816,3 +1816,41 @@ input[type="checkbox"] {
     font-size: 21px;
   }
 }
+.backup-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.backup-panel > p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: #6b7d60;
+}
+.backup-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.backup-actions .outline {
+  height: 36px;
+}
+.backup-panel input[type="file"] {
+  font-size: 11px;
+  width: 100%;
+  padding: 10px;
+}
+.backup-panel small {
+  line-height: 1.9;
+}
+.persist-button {
+  justify-content: flex-start;
+  font-size: 12px;
+  color: #49723c;
+  padding: 10px 0;
+}
+.backup-panel .backup-note {
+  font-size: 11px;
+  background: #f3f6ee;
+  padding: 13px;
+  border-radius: 5px;
+}

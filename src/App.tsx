@@ -19,9 +19,15 @@ import {
   BookOpen,
   PanelRightClose,
   ArrowRight,
+  Download,
 } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
-import { loadRecords, saveRecord, deleteRecord } from "./supabase";
+import { BackupPanel } from "./BackupPanel";
+import {
+  loadRecords,
+  saveRecord,
+  deleteRecord,
+  subscribeToChanges,
+} from "./storage";
 import { routes, pageFromHash, type Page, type RecordItem as R } from "./model";
 const day = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -36,83 +42,8 @@ const hh = (v: string) =>
   Number(v?.split(":")[0] || 0) + Number(v?.split(":")[1] || 0) / 60;
 const time = (v: number) =>
   `${String(Math.floor(v)).padStart(2, "0")}:${v % 1 ? "30" : "00"}`;
-const samples = (now: Date): R[] => {
-  const mon = add(now, -((now.getDay() + 6) % 7)),
-    d = (n: number) => day(add(mon, n));
-  return [
-    {
-      id: "demo1",
-      kind: "task",
-      title: "完成线性代数第三章习题",
-      due: d(4),
-      important: true,
-      urgent: true,
-    },
-    {
-      id: "demo2",
-      kind: "task",
-      title: "整理文献阅读笔记",
-      due: d(5),
-      important: true,
-    },
-    {
-      id: "demo3",
-      kind: "task",
-      title: "提交英语课程论文",
-      due: d(4),
-      important: true,
-    },
-    {
-      id: "demo4",
-      kind: "task",
-      title: "复习概率论知识点",
-      due: d(6),
-      important: true,
-    },
-    {
-      id: "demo5",
-      kind: "task",
-      title: "更新本周学习计划",
-      due: d(4),
-      completed: true,
-    },
-    { id: "demo6", kind: "task", title: "借阅《设计心理学》", due: d(6) },
-    ...[
-      [0, "09:00", "10:30", "高等数学 · 章节复习", "session", "blue", "demo1"],
-      [0, "14:00", "15:30", "文献阅读与笔记", "session", "green", "demo2"],
-      [1, "10:00", "11:30", "英语论文 · 初稿", "session", "blue", "demo3"],
-      [1, "16:00", "17:00", "小组讨论", "event", "orange", ""],
-      [2, "09:00", "10:30", "线性代数 · 习题练习", "session", "blue", "demo1"],
-      [2, "13:00", "14:00", "图书馆 · 自由阅读", "event", "green", ""],
-      [3, "10:00", "12:00", "概率论 · 知识梳理", "session", "blue", "demo4"],
-      [3, "15:00", "16:00", "论文修改与润色", "session", "green", "demo3"],
-      [4, "09:00", "10:30", "线性代数 · 第三章", "session", "blue", "demo1"],
-      [4, "13:30", "15:00", "文献阅读与笔记", "session", "green", "demo2"],
-      [4, "16:00", "17:00", "学习小组 · 每周复盘", "event", "orange", ""],
-      [5, "10:00", "11:30", "概率论 · 错题整理", "session", "blue", "demo4"],
-    ].map((e, i) => ({
-      id: "sample" + i,
-      kind: String(e[4]) as R["kind"],
-      title: String(e[3]),
-      date: d(Number(e[0])),
-      start: String(e[1]),
-      end: String(e[2]),
-      color: String(e[5]),
-      taskId: String(e[6]),
-    })),
-  ];
-};
-export default function Tempo({
-  user,
-  preview = false,
-  onAccount,
-  onExitPreview,
-}: {
-  user: User | null;
-  preview?: boolean;
-  onAccount: () => void;
-  onExitPreview: () => void;
-}) {
+export default function Tempo() {
+  const [backupOpen, setBackupOpen] = useState(false);
   const [now, setNow] = useState(() => new Date());
   const today = day(now);
   const [date, setDate] = useState(() => new Date()),
@@ -120,8 +51,8 @@ export default function Tempo({
       pageFromHash(window.location.hash),
     ),
     [view, setView] = useState("周"),
-    [rows, setRows] = useState<R[]>(() => (preview ? samples(new Date()) : [])),
-    [loading, setLoading] = useState(!preview),
+    [rows, setRows] = useState<R[]>([]),
+    [loading, setLoading] = useState(true),
     [loadError, setLoadError] = useState(false),
     [reload, setReload] = useState(0),
     [msg, setMsg] = useState(""),
@@ -155,7 +86,8 @@ export default function Tempo({
     setTimeout(() => setMsg(""), 3500);
   };
 
-  const demo = preview;
+  const onAccount = () => setBackupOpen(true);
+  useEffect(() => subscribeToChanges(() => setReload((n) => n + 1)), []);
   function setPage(next: string) {
     const p = next as Page;
     if (routes[p]) window.location.hash = routes[p];
@@ -166,7 +98,6 @@ export default function Tempo({
     return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => {
-    if (preview) return;
     let active = true;
     Promise.resolve().then(() => {
       if (active) {
@@ -181,7 +112,7 @@ export default function Tempo({
       .catch(() => {
         if (active) {
           setLoadError(true);
-          notify("云端加载失败，请检查连接和数据库迁移后重试");
+          notify("本机数据读取失败，请检查浏览器存储权限后重试");
         }
       })
       .finally(() => {
@@ -190,7 +121,7 @@ export default function Tempo({
     return () => {
       active = false;
     };
-  }, [preview, reload]);
+  }, [reload]);
 
   const isModalOpen = !!modal;
   useEffect(() => {
@@ -240,15 +171,10 @@ export default function Tempo({
       return notify("结束时间必须晚于开始时间");
     setSaving(true);
     try {
-      let saved = r;
-      if (demo) {
-        saved = { ...r, id: r.id || crypto.randomUUID() };
-      } else {
-        saved = await saveRecord(r);
-      }
+      const saved = await saveRecord(r);
       setRows((rs) => [...rs.filter((x) => x.id !== saved.id), saved]);
       if (close) setModal(null);
-      notify(demo ? "已更新示例（不保存到云端）" : "已保存到云端");
+      notify("已保存到本机");
     } catch (e: unknown) {
       notify((e instanceof Error ? e.message : "") || "保存失败，请重试");
     } finally {
@@ -258,9 +184,7 @@ export default function Tempo({
   async function remove(r: R) {
     if (!confirm("删除此记录？关联学习时段也会一并移除。")) return;
     try {
-      if (!demo) {
-        await deleteRecord(r);
-      }
+      await deleteRecord(r);
       setRows((v) => v.filter((x) => x.id !== r.id && x.taskId !== r.id));
       setModal(null);
       notify("已删除");
@@ -487,7 +411,7 @@ export default function Tempo({
             <span className="avatar">我</span>
             <span>
               我的工作空间
-              <small>{demo ? "示例体验模式" : user?.email || "个人账户"}</small>
+              <small>本机保存 · 导入 / 导出</small>
             </span>
             <MoreHorizontal size={18} />
           </button>
@@ -509,14 +433,16 @@ export default function Tempo({
           </div>
           <div className="top-actions">
             <span className="cloud-dot" />
-            {demo
-              ? "示例工作区"
-              : loading
-                ? "正在同步"
-                : loadError
-                  ? "同步失败"
-                  : "云端已同步"}
-            <button className="top-avatar" onClick={onAccount}>
+            {loading ? "正在读取" : loadError ? "读取失败" : "已保存在此浏览器"}
+            <button className="outline" onClick={onAccount}>
+              <Download size={13} />
+              备份
+            </button>
+            <button
+              className="top-avatar"
+              aria-label="本机数据与备份"
+              onClick={onAccount}
+            >
               我
             </button>
           </div>
@@ -548,7 +474,7 @@ export default function Tempo({
         </div>
         {loadError && (
           <div className="welcome" role="alert">
-            <span>无法加载云端记录。现有数据不会被示例替换。</span>
+            <span>无法读取本机记录。请检查浏览器存储权限后重试。</span>
             <button onClick={() => setReload((v) => v + 1)}>重试</button>
           </div>
         )}
@@ -557,14 +483,6 @@ export default function Tempo({
             <span>一个新的开始。创建第一项任务，安排自己的节奏。</span>
             <button onClick={() => newItem("task")}>
               新建任务 <ArrowRight size={14} />
-            </button>
-          </div>
-        )}
-        {demo && (
-          <div className="demo-banner">
-            界面示例 · 无登录、无云端保存
-            <button onClick={onExitPreview}>
-              退出示例 <ArrowRight size={13} />
             </button>
           </div>
         )}
@@ -1303,9 +1221,10 @@ export default function Tempo({
         )}
         <footer className="page-footer">
           <span>Tempo — 找到你的节奏</span>
-          <span>{demo ? "示例数据 · 仅供体验" : "你的计划，由你掌握"}</span>
+          <span>本机保存 · 请定期备份</span>
         </footer>
       </main>
+      {backupOpen && <BackupPanel onClose={() => setBackupOpen(false)} />}
       <dialog
         ref={dialog}
         onCancel={() => setModal(null)}
